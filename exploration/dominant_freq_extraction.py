@@ -31,6 +31,6 @@ def iterate_and_extract_dominant_freq(path,bins):
 
 
 if __name__ == '__main__':
-    path = os.path.realpath('../Data/init_test')
+    path = os.path.realpath('../data/init_test')
     iterate_and_extract_dominant_freq(path, 100)
     print("yes")
