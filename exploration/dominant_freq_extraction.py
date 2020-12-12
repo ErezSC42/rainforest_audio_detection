@@ -6,8 +6,12 @@ import pandas as pd
 # C:\Workdir\rainforest_audio_detection\exploration\Data\init_test\
 # C:\Workdir\rainforest_audio_detection\Data\init_test
 def iterate_and_extract_dominant_freq(path,bins):
+        filesnames = []
+        dom_freq = []
         for f in os.listdir(path):
             try:
+                filesnames.append(str(f[:-5]))
+                # continue # TODO - to replace when librosa is working
                 signal, sample_rate = librosa.load(path + "\\" + f)
                 fft = np.fft.fft(signal)
                 # calculate abs values on complex numbers to get magnitude
@@ -23,14 +27,18 @@ def iterate_and_extract_dominant_freq(path,bins):
                 print(most_dom_freq_in_bin)
                 most_dom_freq = int(np.argmax([left_spectrum[i] for i in most_dom_freq_in_bin]))
                 print(most_dom_freq)
-                print(left_f[most_dom_freq * bins])
-                input()
+                ret = left_f[most_dom_freq * bins]
+                dom_freq.append(ret)
+
             except:
                 print("fail")
+        # real_ret =  pd.DataFrame({'recording_id': filesnames, "dom_freq": dom_freq})
+        fake_dom_freq = [0] * len(filesnames)
+        return pd.DataFrame({'recording_id': filesnames , "dom_freq": fake_dom_freq})
 
 
-
-if __name__ == '__main__':
-    path = os.path.realpath('../data/init_test')
-    iterate_and_extract_dominant_freq(path, 100)
-    print("yes")
+#
+# if __name__ == '__main__':
+#     path = os.path.realpath('../Data/init_test')
+#     iterate_and_extract_dominant_freq(path, 100)
+#     print("yes")
