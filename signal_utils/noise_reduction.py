@@ -1,4 +1,5 @@
 import os
+import tqdm
 import time
 import scipy
 import librosa
@@ -6,11 +7,22 @@ import numpy as np
 import soundfile as sf
 import sounddevice as sd
 import plotly.express as px
+import multiprocessing as mp
 import matplotlib.pyplot as plt
 from datetime import timedelta as td
 
+
+SAMPLING_RATE = 48000
 # https://timsainburg.com/noise-reduction-python.html
 
+
+def extract_noise_from_signal(signal):
+    '''
+    this is a dummy function so we will untils Ella's function is ready
+    :param signal:
+    :return:
+    '''
+    return np.zeros(2 * SAMPLING_RATE)
 
 def _stft(y, n_fft, hop_length, win_length):
     return librosa.stft(y=y, n_fft=n_fft, hop_length=hop_length, win_length=win_length)
@@ -57,7 +69,7 @@ def plot_statistics_and_filter(
     ax[1].set_title("Filter for smoothing Mask")
     plt.show()
 
-def remove_noise(
+def _remove_noise(
     audio_clip,
     noise_clip,
     n_grad_freq=2,
@@ -71,7 +83,7 @@ def remove_noise(
     visual=False,
 ):
     """Remove noise from audio based upon a clip containing only noise
-
+    1.35 seconds for 60 seconds
     Args:
         audio_clip (array): The first parameter.
         noise_clip (array): The second parameter.
@@ -110,7 +122,7 @@ def remove_noise(
         start = time.time()
     # Calculate value to mask dB to
     mask_gain_dB = np.min(_amp_to_db(np.abs(sig_stft)))
-    print(noise_thresh, mask_gain_dB)
+    #print(noise_thresh, mask_gain_dB)
     # Create a smoothing filter for the mask in time and frequency
     smoothing_filter = np.outer(
         np.concatenate(
@@ -180,11 +192,73 @@ def remove_noise(
     return recovered_signal
 
 
+class NoiseReducer():
+    def __init__(
+            self,
+            n_grad_freq=2,
+            n_grad_time=4,
+            n_fft=2048,
+            win_length=2048,
+            hop_length=512,
+            n_std_thresh=1.5,
+            prop_decrease=1.0,
+            verbose=False,
+            visual=False):
+        self.n_grad_freq = n_grad_freq
+        self.n_grad_time = n_grad_time
+        self.n_fft = n_fft
+        self.win_length = win_length
+        self.hop_length = hop_length
+        self.n_std_thresh = n_std_thresh
+        self.prop_decrease = prop_decrease
+        self.verbose = verbose
+        self.visual = visual
+
+    def reduce_noise(self, input_signal_clip, input_noise_clip):
+        '''
+        :param input_signal_clip: np.array of the original signal. contains both actual animal recording and noise
+        :param input_noise_clip: np.array of noise. should not contain data from actual bird/frog in it
+        :return:
+        '''
+        return _remove_noise(
+            audio_clip=input_signal_clip,
+            noise_clip=input_noise_clip,
+            n_grad_freq=self.n_grad_freq,
+            n_grad_time=self.n_grad_time,
+            n_fft=self.n_fft,
+            win_length=self.win_length,
+            hop_length=self.hop_length,
+            n_std_thresh=self.n_std_thresh,
+            prop_decrease=self.prop_decrease,
+            verbose=self.verbose,
+            visual=self.visual)
+
+    def batch_noise_reduce(self, recordings_array, batch_size=24, **params):
+        '''
+        :param recordings_array: np.array([recording_count, recording_len]
+        :return: denoised audio
+        '''
+        # TODO get noise extractor function from Ella
+        denoised_recordings = []
+        batches_count = int(np.ceil(recordings_array.shape[0] / batch_size))
+        recording_chunks = np.array_split(recordings_array, batches_count)
+
+        for chunk in tqdm.tqdm(recording_chunks):
+            current_recording = recordings_array[chunk, :]
+            current_noise = extract_noise_from_signal(current_recording)
+            current_denoised_recording = self.reduce_noise(current_recording, current_noise)
+            denoised_recordings.append(current_denoised_recording)
+            print(current_recording)
+        denoised_recordings_array = np.vstack(denoised_recordings)
+        assert denoised_recordings_array.shape == recordings_array.shape
+        return denoised_recordings_array
+
+
 if __name__ == '__main__':
     data_path = os.path.join("data", "train", "00b404881.flac")
     signal, sampling_rate = sf.read(data_path)
 
-    SEC = 10
+    SEC = 20
     NOISE = 4
     signal = signal[SEC*sampling_rate:(SEC+10)*sampling_rate]
     signal_noise = signal[int(NOISE*sampling_rate):int((NOISE+1)*sampling_rate)]
@@ -197,14 +271,14 @@ if __name__ == '__main__':
     fig.show()
 
 
-    stft_signal = np.abs(librosa.stft(y=signal, n_fft=64))  # shape: (1025, 5625), dtype=complex128
-    plot_spectrogram(stft_signal, "Test")
+    # stft_signal = np.abs(librosa.stft(y=signal, n_fft=64))  # shape: (1025, 5625), dtype=complex128
+    # plot_spectrogram(stft_signal, "Test")
 
-    output = remove_noise(
-        audio_clip=signal,
-        noise_clip=signal_noise,
-        verbose=True,
-        visual=True)
+    noise_reducer = NoiseReducer()
+
+    output = noise_reducer.reduce_noise(
+        input_signal_clip=signal,
+        input_noise_clip=signal_noise)
 
     # original
     print(f"original signal shape: {signal.shape}")
