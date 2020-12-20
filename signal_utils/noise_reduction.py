@@ -9,7 +9,10 @@ import sounddevice as sd
 import plotly.express as px
 import multiprocessing as mp
 import matplotlib.pyplot as plt
+from joblib import Parallel, delayed
 from datetime import timedelta as td
+
+
 
 
 SAMPLING_RATE = 48000
@@ -235,6 +238,8 @@ class NoiseReducer():
 
     def batch_noise_reduce(self, recordings_array, batch_size=24, **params):
         '''
+        serial denoising of 1000 60 sec recordings took 1670.148553609848 sec.
+        total denoising of 1000 60 sec recordings took 423.0546956062317 sec.
         :param recordings_array: np.array([recording_count, recording_len]
         :return: denoised audio
         '''
@@ -243,13 +248,16 @@ class NoiseReducer():
         batches_count = int(np.ceil(recordings_array.shape[0] / batch_size))
         recording_chunks = np.array_split(recordings_array, batches_count)
 
+        num_cores = mp.cpu_count()
+        start_time = time.time()
         for chunk in tqdm.tqdm(recording_chunks):
-            current_recording = recordings_array[chunk, :]
-            current_noise = extract_noise_from_signal(current_recording)
-            current_denoised_recording = self.reduce_noise(current_recording, current_noise)
-            denoised_recordings.append(current_denoised_recording)
-            print(current_recording)
+            cur_extracted_noises = Parallel(n_jobs=num_cores)(delayed(extract_noise_from_signal)(chunk[i,:]) for i in range(len(chunk)))
+            current_denoised_recordings = Parallel(n_jobs=num_cores)(delayed(self.reduce_noise)(chunk[i,:], cur_extracted_noises[i]) for i in range(len(chunk)))
+            denoised_recordings.extend(current_denoised_recordings)
+
         denoised_recordings_array = np.vstack(denoised_recordings)
+        end_time = time.time()
+        print(f"total denoising of {len(recordings_array)} 60 sec recordings took {end_time - start_time} sec.")
         assert denoised_recordings_array.shape == recordings_array.shape
         return denoised_recordings_array
 
